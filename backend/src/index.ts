@@ -670,8 +670,15 @@ app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
-// Iniciar servidor
-const port = process.env.PORT || 3000;
-console.log(`🚀 Servidor iniciado en puerto ${port}`);
+// Iniciar servidor con Bun
+const port = parseInt(process.env.PORT || "3000");
+Bun.serve({
+  port: port,
+  fetch: app.fetch,
+  onError: (error) => {
+    console.error("Error en el servidor:", error);
+    return new Response("Error interno del servidor", { status: 500 });
+  },
+});
 
-export default app;
+console.log(`🚀 Servidor iniciado en http://localhost:${port}`);
