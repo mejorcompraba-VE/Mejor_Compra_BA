@@ -2,23 +2,28 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
+import postgres from "postgres";
 import path from "path";
 
 const app = new Hono();
 app.use("/*", cors());
 
+// Conexión a PostgreSQL
+const connectionString = process.env.DATABASE_URL || "postgresql://postgres:password@localhost:5432/tienda";
+const sql = postgres(connectionString);
+
 // Servir archivos estáticos del frontend
 app.use("/*", serveStatic({ 
   root: path.join(import.meta.dir, '../../frontend'),
-  rewriteRequestPath: (path) => {
-    if (path === '/') return '/index.html';
-    return path.startsWith('/api') ? path : `/index.html`;
+  rewriteRequestPath: (reqPath) => {
+    if (reqPath === '/') return '/index.html';
+    return reqPath.startsWith('/api') ? reqPath : `/index.html`;
   }
 }));
 
 // ===== INICIALIZAR TABLAS =====
 try {
-  await Bun.sql`
+  await sql`
     CREATE TABLE IF NOT EXISTS products (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -32,7 +37,7 @@ try {
     )
   `;
 
-  await Bun.sql`
+  await sql`
     CREATE TABLE IF NOT EXISTS inventory_movements (
       id SERIAL PRIMARY KEY,
       product_id INT NOT NULL REFERENCES products(id),
@@ -43,7 +48,7 @@ try {
     )
   `;
 
-  await Bun.sql`
+  await sql`
     CREATE TABLE IF NOT EXISTS sales (
       id SERIAL PRIMARY KEY,
       sale_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -54,7 +59,7 @@ try {
     )
   `;
 
-  await Bun.sql`
+  await sql`
     CREATE TABLE IF NOT EXISTS sale_items (
       id SERIAL PRIMARY KEY,
       sale_id INT NOT NULL REFERENCES sales(id),
@@ -476,7 +481,7 @@ app.get("/", (c) => {
 // GET todos los productos
 app.get("/api/products", async (c) => {
   try {
-    const products = await Bun.sql`SELECT * FROM products ORDER BY created_at DESC`;
+    const products = await sql`SELECT * FROM products ORDER BY created_at DESC`;
     return c.json(products);
   } catch (error) {
     console.error("Error en GET /api/products:", error);
@@ -494,7 +499,7 @@ app.post("/api/products", async (c) => {
       return c.json({ error: "Nombre y precio requeridos" }, 400);
     }
     
-    const result = await Bun.sql`
+    const result = await sql`
       INSERT INTO products (name, description, price, sku, image_url, stock_quantity)
       VALUES (${name}, ${description || null}, ${price}, ${sku || null}, ${image_url || null}, 0)
       RETURNING *
@@ -516,12 +521,12 @@ app.post("/api/inventory/entry", async (c) => {
       return c.json({ error: "product_id y quantity requeridos" }, 400);
     }
     
-    await Bun.sql`
+    await sql`
       INSERT INTO inventory_movements (product_id, movement_type, quantity, reason)
       VALUES (${product_id}, 'ENTRY', ${quantity}, ${reason || null})
     `;
     
-    const result = await Bun.sql`
+    const result = await sql`
       UPDATE products SET stock_quantity = stock_quantity + ${quantity}
       WHERE id = ${product_id} RETURNING *
     `;
@@ -543,7 +548,7 @@ app.post("/api/inventory/exit", async (c) => {
       return c.json({ error: "product_id y quantity requeridos" }, 400);
     }
     
-    const product = await Bun.sql`SELECT stock_quantity FROM products WHERE id = ${product_id}`;
+    const product = await sql`SELECT stock_quantity FROM products WHERE id = ${product_id}`;
     
     if (product.length === 0) {
       return c.json({ error: "Producto no encontrado" }, 404);
@@ -553,12 +558,12 @@ app.post("/api/inventory/exit", async (c) => {
       return c.json({ error: "Stock insuficiente" }, 400);
     }
     
-    await Bun.sql`
+    await sql`
       INSERT INTO inventory_movements (product_id, movement_type, quantity, reason)
       VALUES (${product_id}, 'EXIT', ${quantity}, ${reason || null})
     `;
     
-    const result = await Bun.sql`
+    const result = await sql`
       UPDATE products SET stock_quantity = stock_quantity - ${quantity}
       WHERE id = ${product_id} RETURNING *
     `;
@@ -583,7 +588,7 @@ app.post("/api/sales", async (c) => {
     let total_amount = 0;
     
     for (const item of items) {
-      const product = await Bun.sql`SELECT price, stock_quantity FROM products WHERE id = ${item.product_id}`;
+      const product = await sql`SELECT price, stock_quantity FROM products WHERE id = ${item.product_id}`;
       
       if (product.length === 0) {
         return c.json({ error: `Producto ${item.product_id} no encontrado` }, 404);
@@ -599,7 +604,7 @@ app.post("/api/sales", async (c) => {
     const discount_amount = (total_amount * discount_percentage) / 100;
     const final_amount = total_amount - discount_amount;
     
-    const sale = await Bun.sql`
+    const sale = await sql`
       INSERT INTO sales (total_amount, discount_amount, final_amount)
       VALUES (${total_amount}, ${discount_amount}, ${final_amount})
       RETURNING *
@@ -608,24 +613,24 @@ app.post("/api/sales", async (c) => {
     const sale_id = sale[0].id;
     
     for (const item of items) {
-      const product = await Bun.sql`SELECT price FROM products WHERE id = ${item.product_id}`;
+      const product = await sql`SELECT price FROM products WHERE id = ${item.product_id}`;
       const unit_price = product[0].price;
       const subtotal = unit_price * item.quantity;
       
-      await Bun.sql`
+      await sql`
         INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, subtotal)
         VALUES (${sale_id}, ${item.product_id}, ${item.quantity}, ${unit_price}, ${subtotal})
       `;
       
-      await Bun.sql`UPDATE products SET stock_quantity = stock_quantity - ${item.quantity} WHERE id = ${item.product_id}`;
+      await sql`UPDATE products SET stock_quantity = stock_quantity - ${item.quantity} WHERE id = ${item.product_id}`;
       
-      await Bun.sql`
+      await sql`
         INSERT INTO inventory_movements (product_id, movement_type, quantity, reason)
         VALUES (${item.product_id}, 'EXIT', ${item.quantity}, 'VENTA #' || ${sale_id})
       `;
     }
     
-    const saleDetails = await Bun.sql`SELECT * FROM sale_items WHERE sale_id = ${sale_id}`;
+    const saleDetails = await sql`SELECT * FROM sale_items WHERE sale_id = ${sale_id}`;
     return c.json({ ...sale[0], items: saleDetails }, 201);
   } catch (error) {
     console.error("Error en POST /api/sales:", error);
@@ -636,7 +641,7 @@ app.post("/api/sales", async (c) => {
 // GET todas las ventas
 app.get("/api/sales", async (c) => {
   try {
-    const sales = await Bun.sql`SELECT * FROM sales ORDER BY sale_date DESC`;
+    const sales = await sql`SELECT * FROM sales ORDER BY sale_date DESC`;
     return c.json(sales);
   } catch (error) {
     console.error("Error en GET /api/sales:", error);
@@ -647,7 +652,7 @@ app.get("/api/sales", async (c) => {
 // GET productos más vendidos
 app.get("/api/reports/top-products", async (c) => {
   try {
-    const topProducts = await Bun.sql`
+    const topProducts = await sql`
       SELECT 
         p.id, p.name,
         SUM(si.quantity) as total_sold,
