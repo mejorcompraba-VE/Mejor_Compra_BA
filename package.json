@@ -1,0 +1,13 @@
+{
+  "name": "tienda-virtual-mejor-compra",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "cd backend && bun run start",
+    "dev": "cd backend && bun run dev"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "dependencies": {}
+}
