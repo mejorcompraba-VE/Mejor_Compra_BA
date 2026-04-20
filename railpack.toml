@@ -1,5 +1,5 @@
 [build]
-cmd = "npm install && cd backend && bun install"
+cmd = "cd backend && bun install"
 
 [start]
-cmd = "npm start"
+cmd = "cd backend && bun run start"
