@@ -670,8 +670,13 @@ app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
-// Iniciar servidor
-const port = process.env.PORT || 3000;
-console.log(`🚀 Servidor iniciado en puerto ${port}`);
-
+// ===== INICIAR SERVIDOR =====
+const port = parseInt(Bun.env.PORT || "8080");
 export default app;
+
+Bun.serve({
+  fetch: app.fetch,
+  port: port,
+});
+
+console.log(`🚀 Servidor iniciado en puerto ${port}`);
