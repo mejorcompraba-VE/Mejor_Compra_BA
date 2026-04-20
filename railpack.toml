@@ -1,7 +1,5 @@
 [build]
-cmd = "bun install"
-dir = "backend"
+cmd = "cd backend && bun install"
 
 [start]
-cmd = "bun run start"
-dir = "backend"
+cmd = "cd backend && bun run start"
