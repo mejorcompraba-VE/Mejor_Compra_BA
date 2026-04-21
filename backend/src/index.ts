@@ -5,11 +5,16 @@ import { serveStatic } from "hono/bun";
 import postgres from "postgres";
 import path from "path";
 
+// Configure database connection
+if (!Bun.env.DATABASE_URL) {
+  console.warn("⚠️ DATABASE_URL not set, database operations may fail");
+}
+
 const app = new Hono();
 app.use("/*", cors());
 
 // Conexión a PostgreSQL
-const connectionString = process.env.DATABASE_URL || "postgresql://postgres:password@localhost:5432/tienda";
+const connectionString = Bun.env.DATABASE_URL || process.env.DATABASE_URL || "postgresql://postgres:password@localhost:5432/tienda";
 const sql = postgres(connectionString);
 
 // Servir archivos estáticos del frontend
